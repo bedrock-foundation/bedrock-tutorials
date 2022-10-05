@@ -3,11 +3,7 @@
  * @type {import('nextra-theme-docs').DocsThemeConfig}
  */
 export default {
-  banner: {
-    key: 'Bedrock Tutorials',
-    text: 'Nextra 2 Alpha',
-  },
-  docsRepositoryBase: 'https://github.com/shuding/nextra/blob/core/examples/docs',
+  docsRepositoryBase: 'https://github.com/bedrock-foundation/bedrock-tutorials',
   editLink: {
     text: 'Edit this page on GitHub'
   },

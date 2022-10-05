@@ -1,11 +1,12 @@
 {
-  "getting-started": "1. Getting Started",
-  "real-time-polling": "2. Real-time status polling",
-  "durable-polling": "3. Durable status polling",
-  "creating-tokens": "4. Creating Tokens",
-  "token-gating": "5. Token Gating",
-  "off-chain-gating": "6. Off-chain Gating",
-  "error-handling": "7. Error Handling",
-  "message-siging": "8. Message Signing",
-  "authorization": "9. Solana Pay Authorization"
+  "introduction": "1. Introduction",
+  "getting-started": "2. Getting Started",
+  "durable-tracking": "3. Durable status tracking",
+  "real-time-updates": "4. Real-time status updates",
+  "creating-tokens": "5. Creating Tokens",
+  "token-gating": "6. Token Gating",
+  "off-chain-gating": "7. Off-chain Gating",
+  "error-handling": "8. Error Handling",
+  "message-siging": "9. Message Signing",
+  "authorization": "10. QR Code Authorization"
 }
