@@ -7,6 +7,6 @@
   "token-gating": "6. Token Gating",
   "off-chain-gating": "7. Off-chain Gating",
   "error-handling": "8. Error Handling",
-  "message-siging": "9. Message Signing",
+  "message-signing": "9. Message Signing",
   "authorization": "10. QR Code Authorization"
 }
