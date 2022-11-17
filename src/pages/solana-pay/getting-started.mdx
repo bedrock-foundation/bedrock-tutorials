@@ -1,83 +1,67 @@
 import { Callout } from 'nextra-theme-docs'
+import { IncompleteCallout } from '../../components/IncompletePost'
 
-# Introduction
+# Getting Started
 
-<Callout emoji="⚠️">
-  This series is currently incomplete. The first few chapters are available, but the rest are still being written. We expected to be finished by January 2023.
-</Callout>
+<IncompleteCallout />
 
+In this series we will be building a Solana token faucet. This is a fairly simple application. The focus here is more on the techniques used to build it rather than the application itself. We use the following stack to build the faucet:
+1. [TypeScript](https://github.com/microsoft/TypeScript) + [Node.js](https://nodejs.org/en/) - Language & server runtime
+2. [React](https://reactjs.org/) + [Next.js](https://nextjs.org/) + [Recoil.js](https://recoiljs.org/) + [Geist UI](https://geist-ui.dev/en-us) + [Emotion](https://emotion.sh/docs/@emotion/styled) - Web UI
+3. [tRPC](https://trpc.io/) + [Express](https://expressjs.com/) - Communication between clients and server
+4. [SQLite](https://github.com/sqlite/sqlite) + [Prisma](https://www.prisma.io/) - Database & ORM
+5. [@solana/web3.js](https://github.com/solana-labs/solana-web3.js/) + [@solana/pay](https://github.com/solana-labs/solana-pay) - Solana libraries
+7. [ngrok](https://ngrok.com/) - TLS tunneling for local development
 
-This 8-part series on Advanced Solana Pay Development you will teach you how to create a Solana token faucet that distributes SPL tokens via a QR code. 
-While the faucet is cool, the real goal is to teach the Solana community some of the techniques that are used to create production-ready applications powered by Solana Pay.
-
-This tutorial is geared toward developers who are already familiar with [Solana](https://solana.com) and have a basic understanding of [Solana Pay](https://www.solanapay.com). If you're new to either of these, checkout these awesome resources:
-
-This series covers the following topics:
-<ul>
-  <li>
-    1. [Getting Started](https://google.com/getting-started) - Project set up
-  </li>
-  <li>
-    2. [Real-time status polling](https://google.com/real-time-polling) - Discusses how to poll the Solana Pay API to get the status of a transaction
-  </li>
-  <li>
-    3. [Durable status polling](https://google.com/durable-polling)
-  </li>
-  <li>
-    4. [Creating Tokens](https://google.com/creating-tokens)
-  </li>
-  <li>
-    5. [Token Gating](https://google.com/token-gating)
-  </li>
-  <li>
-    6. [Off-chain Gating](https://google.com/off-chain-gating)
-  </li>
-  <li>
-    7. [Error Handling](https://google.com/error-handling)
-  </li>
-  <li>
-    8. [Message Signing](https://google.com/message-siging)
-  </li>
-  <li>
-    9. [Solana Pay Authorization](https://google.com/authorization)
-  </li>
-</ul>
+We will be adding to this list of technologies as we improve our application over the duration of this series. The following features are already implemented in the [starter repository](https://github.com/bedrock-foundation/faucet-starter) and will be improved upon in future posts:
 
 
-Nextra supports [Next.js Internationalized Routing](https://nextjs.org/docs/advanced-features/i18n-routing) out of the box.
+1. The admin can deposit SPL tokens into the faucet via Solana Pay.
+2. The admin can withdraw SPL tokens from the faucet via Solana Pay.
+3. The admin can set the amount of tokens that can be claimed from the faucet per account.
+4. The admin can view information on a webapp about how wallets are interacting with the faucet.
+5. Users can redeem tokens from the faucet via Solana Pay.
 
-To add multi-language pages to your Nextra application, just need to config `i18n` in `next.config.js`:
+The rest of this section will cover setting up the development environment and running the [starter repository](https://github.com/bedrock-foundation/faucet-starter).
 
-```ts
-const withNextra = require('nextra')('nextra-theme-docs', './theme.config.js')
-module.exports = withNextra({
-  i18n: {
-    locales: ['en', 'zh', 'de'],
-    defaultLocale: 'en'
-  }
-})
-```
+## Project Setup
 
-Then, add the locale codes to your file extensions (required for the default locale too):
+Follow the instructions [here](https://docs.solana.com/cli/install-solana-cli-tools) to install or update the Solana CLI tool suite. We are using version 1.9.29.
 
-```plaintext
-/pages
-  index.en.md
-  index.zh.md
-  index.de.md
-  meta.en.json
-  meta.zh.json
-  meta.de.json
-  ...
-```
+Clone the repository and install dependencies:
+ ```bash
+ $ git clone git@github.com:bedrock-foundation/faucet-starter.git
+ $ cd faucet-starter
+ $ npm install
+ ```
 
-Finally, add the `i18n` option to your `theme.config.js` to configure the language dropdown:
+Create a new keypair to use for the faucet. **Note:** this is a private key and should never be shared.
+ ```bash
+ $ solana-keygen new --no-passphrase --outfile ~/.config/solana/keys/bedrock-faucet-tutorial.json
+ ```
+Update the `FAUCET_SECRET_KEY_PATH` value in the `.env` file in the root of the project with the absolute path to the keypair you just created. For example, my path looks like:
+ ``` 
+ FAUCET_SECRET_KEY_PATH=/Users/sam-bedrock/.config/solana/keys/bedrock-faucet-tutorial.json
+ ```
 
-```jsx filename="theme.config.js"
-i18n: [
-  { locale: 'en', text: 'English' },
-  { locale: 'zh', text: '中文' },
-  { locale: 'de', text: 'Deutsch' },
-  { locale: 'ar', text: 'العربية', direction: 'rtl' }
-]
-```
+By default this project uses the free RPC endpoint for Solana mainnet-beta, however it is likely you will surpass the RPC [rate-limits](https://docs.solana.com/cluster/rpc-endpoints#mainnet-beta). If you want to use a different RPC provider (we recommend [Syndica](https://syndica.io/)), update the `SOLANA_RPC_ENDPOINT` value in the `.env` file:
+
+ ``` 
+ SOLANA_RPC_ENDPOINT=https://solana-api.syndica.io/access-token/<YOUR_SYNDICA_API_TOKEN_HERE>/rpc
+ ```
+
+ Start the application in development mode:
+ ```bash
+ $ npm run dev
+ ```
+ Open http://localhost:3000 in your web browser. You should see the following view:
+
+ ![Bedrock Test Token QR](../../../public/images/initialize-faucet.png)
+
+ Click "Initialize Faucet".
+
+
+
+## Token List
+
+![Bedrock Test Token QR](../../../public/images/test-token-qr.png)

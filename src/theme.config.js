@@ -66,4 +66,5 @@ export default {
     link: 'https://discord.gg/hEM84NMkRv', // Next.js discord server,
   },
   unstable_faviconGlyph: '✦',
+  unstable_staticImage: true,
 }
