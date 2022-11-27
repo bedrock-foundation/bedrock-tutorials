@@ -22,13 +22,13 @@ We will be adding to this list of technologies as we improve our application ove
 4. The admin can view information on a webapp about how wallets are interacting with the faucet.
 5. Users can redeem tokens from the faucet via Solana Pay.
 
-The rest of this section will cover setting up the development environment and running the [starter repository](https://github.com/bedrock-foundation/faucet-starter).
+The rest of this lesson will cover setting up the development environment and running the [starter repository](https://github.com/bedrock-foundation/faucet-starter).
 
 ## Project Setup
 
 ### Clone
 
-Clone the repository, checkout the correct branch, and install dependencies:
+Clone the repository, checkout the lesson branch, and install dependencies:
  ```bash
  $ git clone git@github.com:bedrock-foundation/faucet-starter.git
  $ cd faucet-starter
@@ -37,7 +37,7 @@ Clone the repository, checkout the correct branch, and install dependencies:
  ```
 
  ### Environment Variables
- This project uses [dotenv](https://nextjs.org/docs/basic-features/environment-variables) style configuration files to manage environment variables. You can see all the variables you will need to define in the `.env.example` file in the root of the project. Make a copy of this file called `.env` and place it in the root of the project. You will be defining the values for these variables throughout the rest of this section. **Note:** the `.env` file should not be committed to git and is ignore by default.
+ This project uses a [dotenv](https://nextjs.org/docs/basic-features/environment-variables) style configuration file to manage environment variables. You can see all the variables you will need to define in the `.env.example` file in the root of the project. Make a copy of this file called `.env` and place it in the root of the project. You will be defining the values for these variables throughout the rest of this lesson. **Note:** the `.env` file should not be committed to git and is ignore by default.
  
 
  ### Keypair Generation
@@ -56,7 +56,7 @@ Update the `FAUCET_SECRET_KEY_PATH` value in the `.env` file in the root of the 
 
  This project uses Postgres to store data about the faucet. Make sure you have Postgres installed and running on your local machine. You can follow the instructions [here](https://www.postgresql.org/download/) to install Postgres. 
  Create a new Postgres database named `bedrock-faucet-tutorial` and update the `DATABASE_URL` 
- environment variable in `.env` with the connection string for your database. For example, my `.env` file looks like:
+ environment variable in the `.env` file with the connection string for your database. For example, my `.env` file looks like:
 
  ```bash
  DATABASE_URL=postgresql://postgres:@localhost:5432/bedrock-faucet-tutorial
@@ -116,18 +116,20 @@ from the QR code below. Scan the QR Code with a Solana Pay compatible wallet and
 
 ### Configure Token List
 
-By default, this faucet is configured to redeem 1 BTT per scan, and BTT is the only token that is available during configuration. 
+By default, this faucet is configured to redeem 1 BTT per scan, and BTT is the only token that is available without additional configuration. 
 If you're interested in distributing your own token, open `src/shared/utils/TokenUtil.ts` and add your token to `tokenInfoList` array 
 following the format specified in the file. Then, back in the web interface, click "Configure" and select your token from the dropdown.
 
+If you are fine using BTT during this tutorial, you can skip this step.
+
 ### Add Tokens
-Our faucet is now ready for tokens to be deposited. In the web interface click "Add Tokens". Enter the total number of redemptions 
-you would like to fund. The total number of tokens required is calclated as the number of redemptions multiplied by the amount of tokens per redemption.
+Our faucet is now ready for tokens to be deposited. In the web, interface click "Add Tokens". Enter the total number of redemptions 
+you would like to fund. The total number of tokens required for a deposit is calclated as the number of redemptions multiplied by the amount of tokens per redemption.
  For example, if you enter 100 redemptions and the amount of tokens per redemption is 1, the total number of tokens required is 100. 
 
 Scan the QR code with a Solana Pay compatible wallet. The wallet will prompt you to transfer the tokens 
 to the faucet address. Once the transaction is confirmed on your phone, refresh the browser tab (we'll make faucet information update automatically in 
-[section 4](/solana-pay/real-time-updates)) and check to see that the UI has updated with the correct number of tokens. It should look 
+[lesson 4](/solana-pay/real-time-updates)) and check to see that the UI has updated with the correct number of tokens. It should look 
 something like this:
 
 ![Bedrock Test Token QR](../../../public/images/2-getting-started/add-tokens.png)
@@ -142,7 +144,7 @@ refresh the tab when the transaction is confirmed. The interactions table on the
 
 ## Next Steps
 
-Our faucet is now setup! Spend some time familiarizing yourself with the application as it currently exists. 
+Our faucet is now set up! Spend some time familiarizing yourself with the application as it currently exists. 
 Click around the UI, add some tokens, redeem some tokens, withdraw some tokens, etc. Get a sense of how the application works.
 
 In it's current state, the faucet has some issues that are hard to spot but greatly impact the usability of the application. We will be
