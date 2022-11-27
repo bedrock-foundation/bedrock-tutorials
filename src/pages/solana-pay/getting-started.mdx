@@ -28,18 +28,22 @@ The rest of this section will cover setting up the development environment and r
 
 ### Clone
 
-Follow the instructions [here](https://docs.solana.com/cli/install-solana-cli-tools) to install or update the Solana CLI tool suite. We are using version 1.9.29.
-
-Clone the repository and install dependencies:
+Clone the repository, checkout the correct branch, and install dependencies:
  ```bash
  $ git clone git@github.com:bedrock-foundation/faucet-starter.git
  $ cd faucet-starter
+ $ git checkout getting-starting
  $ npm install
  ```
 
- ### Secret Key
+ ### Environment Variables
+ This project uses [dotenv](https://nextjs.org/docs/basic-features/environment-variables) style configuration files to manage environment variables. You can see all the variables you will need to define in the `.env.example` file in the root of the project. Make a copy of this file called `.env` and place it in the root of the project. You will be defining the values for these variables throughout the rest of this section. **Note:** the `.env` file should not be committed to git and is ignore by default.
+ 
 
-Create a new keypair to use for the faucet. **Note:** this is a private key and should never be shared.
+ ### Keypair Generation
+Follow the instructions [here](https://docs.solana.com/cli/install-solana-cli-tools) to install or update the Solana CLI tool suite. We are using version 1.9.29.
+
+Using the Solana CLI, create a new keypair for the faucet. **Note:** this is a private key and should never be shared.
  ```bash
  $ solana-keygen new --no-passphrase --outfile ~/.config/solana/keys/bedrock-faucet-tutorial.json
  ```
@@ -50,7 +54,35 @@ Update the `FAUCET_SECRET_KEY_PATH` value in the `.env` file in the root of the 
 
  ### Postgres
 
+ This project uses Postgres to store data about the faucet. Make sure you have Postgres installed and running on your local machine. You can follow the instructions [here](https://www.postgresql.org/download/) to install Postgres. 
+ Create a new Postgres database named `bedrock-faucet-tutorial` and update the `DATABASE_URL` 
+ environment variable in `.env` with the connection string for your database. For example, my `.env` file looks like:
+
+ ```bash
+ DATABASE_URL=postgresql://postgres:@localhost:5432/bedrock-faucet-tutorial
+ ```
+
+ **Note:** Any Postgres version after 13.0 should work. 
+
  ### TLS
+
+ The Solana Pay specification requires HTTP requests to be made over TLS. We will use [ngrok](https://ngrok.com/) to create a secure tunnel to our local development server. Follow the instructions [here](https://ngrok.com/download) to install ngrok. Once ngrok is installed, start a tunnel to port 3000: 
+
+ ```bash
+ $ ngrok http 3000
+ ```
+
+ The output of this command should look similar to the following:
+
+![Ngrok Output](../../../public/images/2-getting-started/start-ngrok.png)
+
+Note the TLS forwarding address. Mine is https://ef557af0c820.ngrok.io. Yours will be slightly different but will always start with `https://`. Copy this value and edit the `NEXT_PUBLIC_SOLANA_PAY_TLS_SERVER_ADDRESS` variable in the `.env` file in the root of the project. For example:
+
+```bash
+NEXT_PUBLIC_SOLANA_PAY_TLS_SERVER_ADDRESS=https://ef557af0c820.ngrok.io
+```
+
+**Note:** If you are using Ngrok's free plan, the forwarding address will change every time you restart ngrok. Make sure you update the `NEXT_PUBLIC_SOLANA_PAY_TLS_SERVER_ADDRESS` variable in the `.env` file with the new forwarding address every time you restart ngrok. This is pretty annoying and can be mitigated by upgrading to a paid plan.
 
  ### RPC
 
@@ -95,7 +127,7 @@ you would like to fund. The total number of tokens required is calclated as the 
 
 Scan the QR code with a Solana Pay compatible wallet. The wallet will prompt you to transfer the tokens 
 to the faucet address. Once the transaction is confirmed on your phone, refresh the browser tab (we'll make faucet information update automatically in 
-[tutorial 4](/solana-pay/real-time-updates)) and check to see that the UI has updated with the correct number of tokens. It should look 
+[section 4](/solana-pay/real-time-updates)) and check to see that the UI has updated with the correct number of tokens. It should look 
 something like this:
 
 ![Bedrock Test Token QR](../../../public/images/2-getting-started/add-tokens.png)
@@ -106,3 +138,12 @@ To redeem tokens, click "View QR Code" and scan the redemption QR Code with a So
 refresh the tab when the transaction is confirmed. The interactions table on the UI should update to show that the redemption was successful.
 
 ![Bedrock Test Token QR](../../../public/images/2-getting-started/first-redemption.png)
+
+
+## Next Steps
+
+Our faucet is now setup! Spend some time familiarizing yourself with the application as it currently exists. 
+Click around the UI, add some tokens, redeem some tokens, withdraw some tokens, etc. Get a sense of how the application works.
+
+In it's current state, the faucet has some issues that are hard to spot but greatly impact the usability of the application. We will be
+working to fix these issues and improve the faucet throughout the remainder of this series, starting with [durable status tracking](/solana-pay/durable-tracking).
