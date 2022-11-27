@@ -9,7 +9,7 @@ In this series we will be building a Solana token faucet. This is a fairly simpl
 1. [TypeScript](https://github.com/microsoft/TypeScript) + [Node.js](https://nodejs.org/en/) - Language & server runtime
 2. [React](https://reactjs.org/) + [Next.js](https://nextjs.org/) + [Recoil.js](https://recoiljs.org/) + [Geist UI](https://geist-ui.dev/en-us) + [Emotion](https://emotion.sh/docs/@emotion/styled) - Web UI
 3. [tRPC](https://trpc.io/) + [Express](https://expressjs.com/) - Communication between clients and server
-4. [SQLite](https://github.com/sqlite/sqlite) + [Prisma](https://www.prisma.io/) - Database & ORM
+4. [Postgres](https://github.com/postgres/postgres) + [Prisma](https://www.prisma.io/) - Database & ORM
 5. [@solana/web3.js](https://github.com/solana-labs/solana-web3.js/) + [@solana/pay](https://github.com/solana-labs/solana-pay) - Solana libraries
 7. [ngrok](https://ngrok.com/) - TLS tunneling for local development
 
@@ -26,6 +26,8 @@ The rest of this section will cover setting up the development environment and r
 
 ## Project Setup
 
+### Clone
+
 Follow the instructions [here](https://docs.solana.com/cli/install-solana-cli-tools) to install or update the Solana CLI tool suite. We are using version 1.9.29.
 
 Clone the repository and install dependencies:
@@ -34,6 +36,8 @@ Clone the repository and install dependencies:
  $ cd faucet-starter
  $ npm install
  ```
+
+ ### Secret Key
 
 Create a new keypair to use for the faucet. **Note:** this is a private key and should never be shared.
  ```bash
@@ -44,11 +48,21 @@ Update the `FAUCET_SECRET_KEY_PATH` value in the `.env` file in the root of the 
  FAUCET_SECRET_KEY_PATH=/Users/sam-bedrock/.config/solana/keys/bedrock-faucet-tutorial.json
  ```
 
-By default this project uses the free RPC endpoint for Solana mainnet-beta, however it is likely you will surpass the RPC [rate-limits](https://docs.solana.com/cluster/rpc-endpoints#mainnet-beta). If you want to use a different RPC provider (we recommend [Syndica](https://syndica.io/)), update the `SOLANA_RPC_ENDPOINT` value in the `.env` file:
+ ### Postgres
+
+ ### TLS
+
+ ### RPC
+
+By default this project uses the free RPC endpoint for Solana mainnet-beta, however it is likely you will surpass the RPC 
+[rate-limits](https://docs.solana.com/cluster/rpc-endpoints#mainnet-beta). If you want to use a different RPC provider (we recommend [Syndica](https://syndica.io/)), 
+update the `SOLANA_RPC_ENDPOINT` value in the `.env` file:
 
  ``` 
  SOLANA_RPC_ENDPOINT=https://solana-api.syndica.io/access-token/<YOUR_SYNDICA_API_TOKEN_HERE>/rpc
  ```
+
+ ### Start
 
  Start the application in development mode:
  ```bash
@@ -56,12 +70,39 @@ By default this project uses the free RPC endpoint for Solana mainnet-beta, howe
  ```
  Open http://localhost:3000 in your web browser. You should see the following view:
 
- ![Bedrock Test Token QR](../../../public/images/initialize-faucet.png)
+ ![Bedrock Test Token QR](../../../public/images/2-getting-started/initialize-faucet.png)
 
- Click "Initialize Faucet".
+ Click "Initialize Faucet". This will check that the private key is correctly configured and create a `faucet` object in your database.
 
 
+## Tokens
 
-## Token List
+We need a token for our faucet to distribute. We've created a test token for this project (Bedrock Test Token) that can be redeemed 
+from the QR code below. Scan the QR Code with a Solana Pay compatible wallet and sign the transction to receive 100 BTT.
 
-![Bedrock Test Token QR](../../../public/images/test-token-qr.png)
+![Bedrock Test Token QR](../../../public/images/2-getting-started/test-token-qr.png)
+
+### Configure Token List
+
+By default, this faucet is configured to redeem 1 BTT per scan, and BTT is the only token that is available during configuration. 
+If you're interested in distributing your own token, open `src/shared/utils/TokenUtil.ts` and add your token to `tokenInfoList` array 
+following the format specified in the file. Then, back in the web interface, click "Configure" and select your token from the dropdown.
+
+### Add Tokens
+Our faucet is now ready for tokens to be deposited. In the web interface click "Add Tokens". Enter the total number of redemptions 
+you would like to fund. The total number of tokens required is calclated as the number of redemptions multiplied by the amount of tokens per redemption.
+ For example, if you enter 100 redemptions and the amount of tokens per redemption is 1, the total number of tokens required is 100. 
+
+Scan the QR code with a Solana Pay compatible wallet. The wallet will prompt you to transfer the tokens 
+to the faucet address. Once the transaction is confirmed on your phone, refresh the browser tab (we'll make faucet information update automatically in 
+[tutorial 4](/solana-pay/real-time-updates)) and check to see that the UI has updated with the correct number of tokens. It should look 
+something like this:
+
+![Bedrock Test Token QR](../../../public/images/2-getting-started/add-tokens.png)
+
+### Redeem Tokens
+
+To redeem tokens, click "View QR Code" and scan the redemption QR Code with a Solana Pay compatible wallet. Sign the transaction with the wallet and 
+refresh the tab when the transaction is confirmed. The interactions table on the UI should update to show that the redemption was successful.
+
+![Bedrock Test Token QR](../../../public/images/2-getting-started/first-redemption.png)
