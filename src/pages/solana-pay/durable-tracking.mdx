@@ -1,5 +1,104 @@
-import IncompletePost from '../../components/IncompletePost'
+import { IncompleteCallout } from '../../components/IncompletePost'
 
 # Durable Transaction Status Tracking
 
-<IncompletePost availableDate="October 2022" />
+<IncompleteCallout />
+
+This is part 3 of a 10-part series on advanced Solana Pay development that you will teach you how to create a Solana token faucet that distributes SPL tokens via a QR code. 
+
+If you haven't already, checkout the [first part](/solana-pay/introduction) of this series to get started.
+
+## Lesson Overview
+Solana transactions are processed asynchronically by the Solana blockchain. Transactions are constructed by the client, signed, and sent to RPC nodes to be broadcast to the network. 
+The client then waits for the transaction to be processed and confirmed. This process ususally takes a few seconds. Once a transaction has reached a state of `confirmed`, it is [very unlikely](https://docs.solana.com/cluster/commitments) the transcation will fail.
+
+A client must poll the Solana blockchain via RPC nodes in order to retrieve the status of a transaction. This polling process is a crucial element of nearly any application built on Solana. 
+In this lesson, we will discuss several of the common pitfalls of basic polling strategies and implement a more robust polling mechanism for our Solana Pay SPL token faucet based around a [Redis task-queue](https://docs.bullmq.io/).
+
+## Naive Polling
+Within our SPL token faucet, we have a function that polls the Solana blockchain for the status of a transaction and stores this information in the `scans` table of our database. Open `scan.service.ts` and take a look at the `confirmTransaction` method:
+
+```typescript
+class ScanService {
+// ...
+private confirmTransaction = async (
+    ref: string,
+    scanId: string,
+  ): Promise<void> => {
+    let signature: string | null = null;
+    try {
+      /**
+       * Try to confirm the transaction 60 times
+       * waiting 2 seconds between each attempt.
+       */
+      for (let i = 0; i < 60; i++) {
+        await WaitUtil.wait(2000);
+        const signatures = await RPCConnection.getSignaturesForAddress(
+          new PublicKey(ref),
+          {},
+          'confirmed',
+        );
+
+        if (signatures.length > 0) {
+          signature = signatures[0]?.signature ?? null;
+
+          await prisma.scan.update({
+            where: { id: scanId },
+            data: { signature, message: 'Confirmed', state: 'Confirmed' },
+          });
+
+          break;
+        }
+      }
+
+      /**
+       * Mark the transaction as failed if it was not confirmed
+       */
+      if (!signature) {
+        prisma.scan.update({
+          where: { id: scanId },
+          data: {
+            signature: null,
+            message: 'Failed to confirm in 2 minutes',
+            state: 'Failed',
+          },
+        });
+      }
+    } catch (e) {
+      console.error(`Error confirming transaction for scanId ${scanId}`);
+      console.error(e);
+    }
+  };
+// ...
+}
+```
+
+This method takes a two parameters: 
+
+1. `ref` - a base58-encoded reference to a Solana transaction (more on this later)
+2. `scanId` - the unique database identifier of the `scan` record that initialied this transaction
+
+
+This method is called each time a new `scan` record with a `state` field of `Scanned` is created. The `state` field of `Scanned` indicates that the transaction has been broadcast to the Solana blockchain, but has not yet been confirmed or marked as failed.
+
+
+The `confirmTransction` method starts a `for` loop that will attempt to confirm the transaction 60 times, waiting 2 seconds between each attempt. 
+On each attempt, the method asks the Solana network for a list of all the signatures associated with the `ref` address. We are using the `confirmed` commitment level meaning
+the network will only return signatures for transactions that have been confirmed. Since we generate a unique `ref` to track every transaction we create, 
+we assume that the first signature returned is the signature of the transaction we are looking for (if there is more than one signature returned, something likely went wrong).
+
+When the `for` loop finds a signature, it updates the `scan` record in the database with the signature of the transaction and sets the `scan` state to `Confirmed`. 
+If the `for` loop does not find a signature within 2 minutes, it stops polling and marks the `scan` record state as `Failed`.
+
+This simple approach to polling may work for small applications but is ultimately flawed. Function execution is not persisted between application restarts meaning the `for` loop 
+in this method will terminate and the transaction status will not be tracked properly if the application process is killed, crashes, or is restarted.
+
+## Redis Task Queue
+
+A more robust polling strategy is to use a task queue to coordinate the tracking of transaction statuses. The state of our task queue is stored external to our application in Redis, meaning process termination will not affect the state of the queue.
+
+We will add the following tech to our application in order to accomplish this:
+1. [Redis](https://github.com/microsoft/TypeScript) - Highly available key-value store
+2. [BullMQ](https://docs.bullmq.io/)- Fast and robust queue system built on top Redis
+
+At a high level, BullMQ allows us to create tasks that are stored in Redis and executed by a worker process.
