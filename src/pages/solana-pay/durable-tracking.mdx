@@ -9,8 +9,8 @@ This is part 3 of a 10-part series on advanced Solana Pay development that you w
 If you haven't already, checkout the [first part](/solana-pay/introduction) of this series to get started.
 
 ## Lesson Overview
-Solana transactions are processed asynchronically by the Solana blockchain. Transactions are constructed by the client, signed, and sent to RPC nodes to be broadcast to the network. 
-The client then waits for the transaction to be processed and confirmed. This process ususally takes a few seconds. Once a transaction has reached a state of `confirmed`, it is [very unlikely](https://docs.solana.com/cluster/commitments) the transcation will fail.
+Solana transactions are processed asynchronously by the Solana blockchain. Transactions are constructed by the client, signed, and sent to RPC nodes to be broadcast to the network. 
+The client then waits for the transaction to be processed and confirmed. This process usually takes a few seconds. Once a transaction has reached a state of `confirmed`, it is [very unlikely](https://docs.solana.com/cluster/commitments) the transaction will fail.
 
 A client must poll the Solana blockchain via RPC nodes in order to retrieve the status of a transaction. This polling process is a crucial element of nearly any application built on Solana. 
 In this lesson, we will discuss several of the common pitfalls of basic polling strategies and implement a more robust polling mechanism for our Solana Pay SPL token faucet based around a [Redis task-queue](https://docs.bullmq.io/).
@@ -73,16 +73,16 @@ private confirmTransaction = async (
 }
 ```
 
-This method takes a two parameters: 
+This method takes two parameters: 
 
 1. `ref` - a base58-encoded reference to a Solana transaction (more on this later)
-2. `scanId` - the unique database identifier of the `scan` record that initialied this transaction
+2. `scanId` - the unique database identifier of the `scan` record that initialized this transaction
 
 
 This method is called each time a new `scan` record with a `state` field of `Scanned` is created. The `state` field of `Scanned` indicates that the transaction has been broadcast to the Solana blockchain, but has not yet been confirmed or marked as failed.
 
 
-The `confirmTransction` method starts a `for` loop that will attempt to confirm the transaction 60 times, waiting 2 seconds between each attempt. 
+The `confirmTransaction` method starts a `for` loop that will attempt to confirm the transaction 60 times, waiting 2 seconds between each attempt. 
 On each attempt, the method asks the Solana network for a list of all the signatures associated with the `ref` address. We are using the `confirmed` commitment level meaning
 the network will only return signatures for transactions that have been confirmed. Since we generate a unique `ref` to track every transaction we create, 
 we assume that the first signature returned is the signature of the transaction we are looking for (if there is more than one signature returned, something likely went wrong).
@@ -101,4 +101,8 @@ We will add the following tech to our application in order to accomplish this:
 1. [Redis](https://github.com/microsoft/TypeScript) - Highly available key-value store
 2. [BullMQ](https://docs.bullmq.io/)- Fast and robust queue system built on top Redis
 
-At a high level, BullMQ allows us to create tasks that are stored in Redis and executed by a worker process.
+At a high level, BullMQ allows us to create tasks that are stored in Redis and executed by a worker. In our case, the worker shares the same process as the rest of our application, but workers can easily be run in separate processes or even on separate machines. 
+If the application process is terminated, the tasks in the queue will be re-queued and executed when the application is restarted.
+
+We will be creating a task that emulates the `confirmTransaction` method that currently exists but will instead use BullMQ to reliably track the status of the transaction.
+
