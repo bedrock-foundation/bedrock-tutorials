@@ -104,5 +104,328 @@ We will add the following tech to our application in order to accomplish this:
 At a high level, BullMQ allows us to create tasks that are stored in Redis and executed by a worker. In our case, the worker shares the same process as the rest of our application, but workers can easily be run in separate processes or even on separate machines. 
 If the application process is terminated, the tasks in the queue will be re-queued and executed when the application is restarted.
 
-We will be creating a task that emulates the `confirmTransaction` method that currently exists but will instead use BullMQ to reliably track the status of the transaction.
+We will be creating a task that replaces the `confirmTransaction` method that currently exists but will instead use BullMQ to reliably track the status of the transaction.
+
+### Add Dependencies
+
+In the root folder of the project, checkout the `durable-tracking` branch:
+```bash
+git checkout durable-tracking
+```
+
+Install BullMQ:
+
+```bash
+$ npm install --save bullmq
+```
+
+### Redis
+Follow the instructions [here](https://redis.io/docs/getting-started) to install Redis locally on your machine. Once Redis is installed, start the Redis server:
+
+```bash
+$ redis-server
+```
+
+This command will start a local instance of Redis on port `6379`. We now need to update our `.env` file to point to our Redis instance. Open `.env` and add the following line:
+
+```bash
+REDIS_CONNECTION_STRING=redis://localhost:6379
+```
+
+This is the default Redis connection string for a locally hosted Redis instance. If you are using a remote instance, replace this value with your connection string.
+
+### Task Service
+
+Create a new folder called `src/server/services/task`. In the new `task` folder, create a file called `task.service.ts` and paste the following code. 
+This file will contain the logic for creating and processing tasks. We will review how this code works in the next section:
+
+```typescript
+import { router, publicProcedure } from '../../trpc';
+import { z } from 'zod';
+import RPCConnection from '~/server/utils/RPCConnection';
+import { PublicKey } from '@solana/web3.js';
+import { Job, Queue, Worker } from 'bullmq';
+
+export type TaskTypes = 'Confirm Transaction';
+
+type TaskData = {
+  type: TaskTypes;
+  scanId: string;
+  ref: string;
+};
+
+const TASK_QUEUE_NAME = 'faucet-tasks';
+
+const redisUrl = new URL(String(process.env.REDIS_CONNECTION_STRING));
+
+const connection = {
+  host: redisUrl.hostname,
+  port: parseInt(redisUrl.port, 10),
+  username: redisUrl.username,
+  password: redisUrl.password,
+};
+
+export const MAX_ATTEMPTS_PER_TASK = 40;
+export const ATTEMPT_MS_DELAY_PER_TASK = 3000;
+
+class TaskService {
+  private queue: Queue = new Queue(TASK_QUEUE_NAME, {
+    connection,
+    defaultJobOptions: {
+      attempts: MAX_ATTEMPTS_PER_TASK,
+      backoff: {
+        type: 'fixed',
+        delay: ATTEMPT_MS_DELAY_PER_TASK,
+      },
+    },
+  });
+
+  private worker: Worker;
+
+  public get router() {
+    return router({
+      create: this.create,
+    });
+  }
+
+  appCaller: any = null;
+
+  public setAppCaller = (caller: any) => {
+    this.appCaller = caller;
+  };
+
+  constructor() {
+    this.worker = new Worker(TASK_QUEUE_NAME, this.run, { connection });
+
+    this.worker.on('error', console.error);
+  }
+
+  private info = (job: Job, status: string) => {
+    console.log(
+      `Job ID: ${job.id} | Status: ${status} | Attempt: #${job.attemptsMade}`,
+    );
+  };
+
+  private run = async (job: Job<TaskData>) => {
+    this.info(job, 'Running');
+
+    const {
+      data: { type },
+    } = job;
+
+    const executor: ((job: Job) => Promise<void>) | null = (() => {
+      switch (type) {
+        case 'Confirm Transaction':
+          return this.confirmTransaction;
+        default:
+          return null;
+      }
+    })();
+
+    if (!executor) {
+      return;
+    }
+
+    await executor(job);
+  };
+
+  public createInput = z.object({
+    scanId: z.string(),
+    ref: z.string(),
+    type: z.string(),
+  });
+
+  public create = publicProcedure
+    .input(this.createInput)
+    .mutation(async ({ input }) => {
+      const { scanId, ref, type } = input;
+      const name = `${type} for scan ${scanId}`;
+
+      try {
+        const job = await this.queue.add(
+          name,
+          {
+            scanId,
+            ref,
+            type,
+          },
+          {
+            delay: 0,
+          },
+        );
+
+        return job.id;
+      } catch (e) {
+        return null;
+      }
+    });
+
+  private confirmTransaction = async (job: Job<TaskData>) => {
+    const {
+      data: { scanId, ref },
+    } = job;
+
+    const signatures = await RPCConnection.getSignaturesForAddress(
+      new PublicKey(ref),
+      {},
+      'confirmed',
+    );
+    const signature: string | null = signatures?.pop?.()?.signature ?? null;
+    const isLastAttempt = job.attemptsMade >= MAX_ATTEMPTS_PER_TASK;
+
+    if (signature) {
+      await this.appCaller.scan.update({
+        id: scanId,
+        message: 'Confirmed',
+        state: 'Confirmed',
+        signature,
+      });
+
+      this.info(job, 'Completed');
+    } else if (isLastAttempt) {
+      const message = `Failed to confirm in ${
+        (MAX_ATTEMPTS_PER_TASK * ATTEMPT_MS_DELAY_PER_TASK) / 60 / 1000
+      } minutes`;
+
+      await this.appCaller.scan.update({
+        id: scanId,
+        message,
+        state: 'Failed',
+        signature: null,
+      });
+
+      this.info(job, 'Failed');
+    } else {
+      throw new Error(
+        `Could not find transaction with ref ${ref}. Trying again...`,
+      );
+    }
+  };
+}
+
+export default new TaskService();
+
+```
+
+### App Router
+We need to update the app router to include the task service. This will allow our other backend services to call the new task service. Open `src/server/appRouter.ts` and add the lines below:
+
+```typescript
+import { router } from './trpc';
+import scanService from './services/scan/scan.service';
+import faucetService from './services/faucet/faucet.service';
+import taskService from './services/task/task.service'; // Add this line
+
+export const appRouter = router({
+  faucet: faucetService.router,
+  scan: scanService.router,
+  task: taskService.router, // Add this line
+});
+
+export const appCaller = appRouter.createCaller({});
+
+faucetService.setAppCaller(appCaller);
+scanService.setAppCaller(appCaller);
+taskService.setAppCaller(appCaller); // Add this line
+
+export type AppRouter = typeof appRouter;
+
+```
+
+### Scan Service
+We need to update the scan service to use the new task service when a new `scan` is created. Open `src/server/services/scan/scan.service.ts` and update the `create` method to look like this:
+
+```typescript
+class ScanService {
+//...
+  public create = publicProcedure
+    .input(this.createInput)
+    .mutation(async ({ input }) => {
+      const scan = await prisma.scan.create({
+        data: input,
+        select: ScanService.ScanSelect,
+      });
+
+      /**
+       * Create a task to confirm the transaction
+       */
+
+      if (scan.state === 'Scanned') {
+        this.appCaller.task.create({
+          scanId: scan.id,
+          ref: scan.ref,
+          type: 'Confirm Transaction',
+        });
+      }
+
+      return scan;
+    });
+//...
+}
+```
+
+### Start Faucet
+
+From the root of the project, start the application:
+
+```bash
+$ npm run dev
+```
+
+Make sure that [ngrok](http://localhost:3001/solana-pay/getting-started#tls) is running and that the `NEXT_PUBLIC_SOLANA_PAY_TLS_SERVER_ADDRESS` variable is properly set in `.env`. To start ngrok, open a new terminal tab and run:
+
+```bash
+$ ngrok http 3000
+```
+
+Open your web browser to http://localhost:3000. The UI should similar to the image below. You may have a few more rows in the interactions table depending on how many times you have used the faucet:
+
+![Faucet Details](../../../public/images/3-durable-tracking/faucet-details.png)
+
+Click the `View QR Code` button and scan the QR code with a Solana Pay compatible mobile wallet to redeem tokens. Do not click confirm when the Solana Pay interface loads. As soon as the QR code is scanned, you should see terminal output similar to:
+
+```bash
+Job ID: 4 | Status: Running | Attempt: #1
+Job ID: 4 | Status: Running | Attempt: #2
+Job ID: 4 | Status: Running | Attempt: #3
+```
+
+
+This is our task queue attempting to confirm the transaction. Refresh the browser UI and you will see your transaction "In Progress" in the interactions table:
+
+![Transaction Pending](../../../public/images/3-durable-tracking/transaction-pending.png)
+
+Confirm the transaction in your mobile wallet and the task queue will log a success message:
+
+```bash
+Job ID: 4 | Status: Completed | Attempt: #3
+```
+
+Refresh the browser UI and you will see your transaction "Confirmed" in the interactions table:
+
+![Transaction Confirmed](../../../public/images/3-durable-tracking/transaction-confirmed.png)
+
+Our task queue has successfully confirmed the transaction and updated the `scan` record in the database!
+
+### Review
+
+TODO
+
+
+## Alternative Approaches
+
+Using an task queue with state external to your application is a common pattern for durable tracking. In this tutorial, we used Redis and BullMQ. Several alternative approaches. While we will not explore these options further
+in this series, they are worth mentioning as they may be a better fit for your use-case.
+
+[Helius Webhooks](https://docs.helius.xyz/webhooks/webhooks-summary) - Helius is a service that allows you to create webhooks for your application. Helius will send a webhook to your application when a transaction is confirmed. This is a great option if you are looking for a managed solution with low overhead.
+
+
+## Next Steps
+
+In the tutorial, we will use websockets to broadcast transaction status updates to our web client in realtime. Check it out [here](/solana-pay/real-time-updates).
+
+
+
+
+
 
