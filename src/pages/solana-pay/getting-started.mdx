@@ -13,7 +13,7 @@ In this series we will be building a Solana token faucet. This is a fairly simpl
 5. [@solana/web3.js](https://github.com/solana-labs/solana-web3.js/) + [@solana/pay](https://github.com/solana-labs/solana-pay) - Solana libraries
 7. [ngrok](https://ngrok.com/) - TLS tunneling for local development
 
-We will be adding to this list of technologies as we improve our application over the duration of this series. The following features are already implemented in the [starter repository](https://github.com/bedrock-foundation/faucet-starter) and will be improved upon in future posts:
+We will be adding to this list of technologies as we expand our application over the duration of this series. The following features are already implemented in the [starter repository](https://github.com/bedrock-foundation/faucet-starter) and will be improved upon in future posts:
 
 
 1. The admin can deposit SPL tokens into the faucet via Solana Pay.
@@ -86,13 +86,16 @@ NEXT_PUBLIC_SOLANA_PAY_TLS_SERVER_ADDRESS=https://ef557af0c820.ngrok.io
 
  ### RPC
 
-By default this project uses the free RPC endpoint for Solana mainnet-beta, however it is likely you will surpass the RPC 
-[rate-limits](https://docs.solana.com/cluster/rpc-endpoints#mainnet-beta). If you want to use a different RPC provider (we recommend [Syndica](https://syndica.io/)), 
-update the `SOLANA_RPC_ENDPOINT` value in the `.env` file:
+By default this project uses the free  RPC endpoint for Solana [devnet](https://docs.solana.com/clusters#devnet). 
+**Note:** With heavy use, there is a chance that you will surpass the RPC [rate-limits](https://docs.solana.com/cluster/rpc-endpoints) of devnet. 
+If this happens, either wait for the rate-limit to reset or switch to a different network.
+To use a different network, update the `SOLANA_RPC_ENDPOINT` value in the `.env` file:
 
  ``` 
- SOLANA_RPC_ENDPOINT=https://solana-api.syndica.io/access-token/<YOUR_SYNDICA_API_TOKEN_HERE>/rpc
+ SOLANA_RPC_ENDPOINT=<YOUR_RPC_URL>
  ```
+ 
+ RPC rate-limiting is IP based and therefore it is possible to circumvent the rate-limit by using a VPN.
 
  ### Start
 
@@ -109,16 +112,29 @@ update the `SOLANA_RPC_ENDPOINT` value in the `.env` file:
 
 ## Tokens
 
-We need a token for our faucet to distribute. We've created a test token for this project (Bedrock Test Token) that can be redeemed 
-from the QR code below. Scan the QR Code with a Solana Pay compatible wallet and sign the transaction to receive 100 BTT.
+We need a token for our faucet to distribute. We've created a devnet [test token](https://solscan.io/token/74gzSTeGPaMhjD3L4pDFrbxuzUmaugp4mcC6uPFLCirx?cluster=devnet) 
+for this project (Bedrock Test Token) that can be redeemed 
+from the QR code below. Switch your Solana Pay compatible mobile wallet into devnet mode (this can usually be found in the apps settings but the exact location will vary depending on the wallet),
+scan the QR Code below, and sign the transaction to receive 100 BTT.
 
 ![Bedrock Test Token QR](../../../public/images/2-getting-started/test-token-qr.png)
 
+You will also need some devnet SOL to fund transactions. Copy your mobile wallet address. 
+Back in the command line, run the following commands to switch to the devnet Solana cluster and transfer 1 SOL to your wallet address:
+
+```bash
+solana config set --url https://api.devnet.solana.com
+solana airdrop 1 <YOUR_WALLET_ADDRESS>
+```
+
+You should now have 100 BTT and at least 1 SOL in your mobile wallet on devnet.
+
 ### Configure Token List
 
-By default, this faucet is configured to redeem 1 BTT per scan, and BTT is the only token that is available without additional configuration. 
+By default, this faucet is configured to redeem 1.00 BTT per scan, and BTT is the only token that is available without additional configuration. 
 If you're interested in distributing your own token, open `src/shared/utils/TokenUtil.ts` and add your token to `tokenInfoList` array 
-following the format specified in the file. Then, back in the web interface, click "Configure" and select your token from the dropdown.
+following the format specified in the file. Make sure any tokens you add exist on the network your app is currently configured to use, like devnet, testnet, or mainnet-beta.
+Then, back in the web interface, click "Configure" and select your token from the dropdown.
 
 If you are fine using BTT during this tutorial, you can skip this step.
 
