@@ -10,13 +10,13 @@ If you haven't already, checkout the [first part](/solana-pay/introduction) of t
 
 ## Lesson Overview
 Solana transactions are processed asynchronously by the Solana blockchain. Transactions are constructed by the client, signed, and sent to RPC nodes to be broadcast to the network. 
-The client then waits for the transaction to be processed and confirmed. This process usually takes a few seconds. Once a transaction has reached a state of `confirmed`, it is [very unlikely](https://docs.solana.com/cluster/commitments) the transaction will fail.
+The client then waits for the transaction to be processed and confirmed. This process usually takes a few seconds. Once a transaction has reached a state of `confirmed`, it is [very unlikely](https://docs.solana.com/cluster/commitments) the transaction will fail (a confirmed transaction has [never](https://solana.stackexchange.com/questions/4455/what-is-the-of-confirmed-transactions-that-get-subsequently-dropped/4500#4500) been rolled back).
 
 A client must poll the Solana blockchain via RPC nodes in order to retrieve the status of a transaction. This polling process is a crucial element of nearly any application built on Solana. 
 In this lesson, we will discuss several of the common pitfalls of basic polling strategies and implement a more robust polling mechanism for our Solana Pay SPL token faucet based around a [Redis task-queue](https://docs.bullmq.io/).
 
 ## Naive Polling
-Within our SPL token faucet, we have a function that polls the Solana blockchain for the status of a transaction and stores this information in the `scans` table of our database. Open `scan.service.ts` and take a look at the `confirmTransaction` method:
+Within our SPL token faucet, we have a function that polls the Solana blockchain for the status of a transaction and stores this information in the `scans` table of our database. Open `src/server/services/scan/scan.service.ts` and take a look at the `confirmTransaction` method:
 
 ```typescript
 class ScanService {
@@ -112,6 +112,7 @@ In the root folder of the project, checkout the `durable-tracking` branch:
 ```bash
 git checkout durable-tracking
 ```
+**Note:** We are changing branches here to stay organized. There aren't any code changes between the end of [lesson 2](/solana-pay/getting-started) and the start of this lesson. In future lessons, this may not be the case.
 
 Install BullMQ:
 
@@ -310,23 +311,23 @@ export default new TaskService();
 ### App Router
 We need to update the app router to include the task service. This will allow our other backend services to call the new task service. Open `src/server/appRouter.ts` and add the lines below:
 
-```typescript
+```diff
 import { router } from './trpc';
 import scanService from './services/scan/scan.service';
 import faucetService from './services/faucet/faucet.service';
-import taskService from './services/task/task.service'; // Add this line
++ import taskService from './services/task/task.service';
 
 export const appRouter = router({
   faucet: faucetService.router,
   scan: scanService.router,
-  task: taskService.router, // Add this line
++ task: taskService.router,
 });
 
 export const appCaller = appRouter.createCaller({});
 
 faucetService.setAppCaller(appCaller);
 scanService.setAppCaller(appCaller);
-taskService.setAppCaller(appCaller); // Add this line
++ taskService.setAppCaller(appCaller);
 
 export type AppRouter = typeof appRouter;
 
@@ -409,20 +410,129 @@ Our task queue has successfully confirmed the transaction and updated the `scan`
 
 ### Review
 
-TODO
+Our new task service handles creating a BullMQ task queue called `faucet-tasks` and instantiating a worker to process these tasks. We create the queue with: 
+```typescript
+//...
+const TASK_QUEUE_NAME = 'faucet-tasks';
+//...
+export const MAX_ATTEMPTS_PER_TASK = 40;
+export const ATTEMPT_MS_DELAY_PER_TASK = 3000;
+
+class TaskService {
+  private queue: Queue = new Queue(TASK_QUEUE_NAME, {
+    connection,
+    defaultJobOptions: {
+      attempts: MAX_ATTEMPTS_PER_TASK,
+      backoff: {
+        type: 'fixed',
+        delay: ATTEMPT_MS_DELAY_PER_TASK,
+      },
+    },
+  });
+  //...
+}
+```
+
+We specify the maximum number of attempts to process a task (40) and the delay between attempts in milliseconds (3000). 
+This means we will try to confirm each transaction up to 40 times with a delay of 3 seconds in between attempts for total of 2 minutes.
+
+We create a worker in the constructor of the task service class and specify the `run` method as a our task executor. We also add an event listener to log errors if our worker encounters any:
+
+```typescript
+//...
+class TaskService {
+//...
+  constructor() {
+    this.worker = new Worker(TASK_QUEUE_NAME, this.run, { connection });
+ 
+    this.worker.on('error', console.error);
+  }
+  //...
+  private run = async (job: Job<TaskData>) => {
+    this.info(job, 'Running');
+ 
+    const {
+      data: { type },
+    } = job;
+ 
+    const executor: ((job: Job) => Promise<void>) | null = (() => {
+      switch (type) {
+        case 'Confirm Transaction':
+          return this.confirmTransaction;
+        default:
+          return null;
+      }
+    })();
+ 
+    if (!executor) {
+      return;
+    }
+ 
+    await executor(job);
+  };
+  //...
+}
+``` 
+
+The `run` method will be called by our task queue each time a task is processed. It is passed a BullMQ `Job` object that contains the parameters for the the task. The `run` method simply checks the type of task that is 
+being processed and calls the appropriate task executor. In our case, we only have one task type: `Confirm Transaction`, which is processed by the `confirmTransaction` method:
+
+```typescript
+private confirmTransaction = async (job: Job<TaskData>) => {
+    const {
+      data: { scanId, ref },
+    } = job;
+ 
+    const signatures = await RPCConnection.getSignaturesForAddress(
+      new PublicKey(ref),
+      {},
+      'confirmed',
+    );
+    const signature: string | null = signatures?.pop?.()?.signature ?? null;
+    const isLastAttempt = job.attemptsMade >= MAX_ATTEMPTS_PER_TASK;
+ 
+    if (signature) {
+      await this.appCaller.scan.update({
+        id: scanId,
+        message: 'Confirmed',
+        state: 'Confirmed',
+        signature,
+      });
+ 
+      this.info(job, 'Completed');
+    } else if (isLastAttempt) {
+      const message = `Failed to confirm in ${
+        (MAX_ATTEMPTS_PER_TASK * ATTEMPT_MS_DELAY_PER_TASK) / 60 / 1000
+      } minutes`;
+ 
+      await this.appCaller.scan.update({
+        id: scanId,
+        message,
+        state: 'Failed',
+        signature: null,
+      });
+ 
+      this.info(job, 'Failed');
+    } else {
+      throw new Error(
+        `Could not find transaction with ref ${ref}. Trying again...`,
+      );
+    }
+```
 
 
 ## Alternative Approaches
 
-Using an task queue with state external to your application is a common pattern for durable tracking. In this tutorial, we used Redis and BullMQ. Several alternative approaches. While we will not explore these options further
+Using an task queue with state external to your application is a common pattern for durable status tracking. In this tutorial, we used Redis and BullMQ. Alternative approaches to transaction status tracking exist. While we will not explore these options in-depth
 in this series, they are worth mentioning as they may be a better fit for your use-case.
 
-[Helius Webhooks](https://docs.helius.xyz/webhooks/webhooks-summary) - Helius is a service that allows you to create webhooks for your application. Helius will send a webhook to your application when a transaction is confirmed. This is a great option if you are looking for a managed solution with low overhead.
+[Helius Webhooks](https://docs.helius.xyz/webhooks/webhooks-summary) - Helius webhooks let you listen to on-chain events and trigger certain actions when these events happen. Rather than continuously polling blocks, transactions, or accounts on the blockchain, Helius webhooks serve on-chain events to any URL that you provide as soon as they are finalized on-chain. 
+You don't need to worry about setting up and maintaining expensive & performant infrastructure to keep up with the latest transactions happening on-chain. This is a great option if you are looking for a managed solution with low overhead.
 
 
 ## Next Steps
 
-In the tutorial, we will use websockets to broadcast transaction status updates to our web client in realtime. Check it out [here](/solana-pay/real-time-updates).
+In the next tutorial, we will use websockets to broadcast transaction status updates to our web client in realtime. Check it out [here](/solana-pay/real-time-updates).
 
 
 
